@@ -54,10 +54,12 @@ class PairScanner:
             except (ValueError, TypeError):
                 continue
 
-            if quote_volume < settings.pair_scan_min_volume_usdt:
-                continue
-            if price_change_pct < settings.pair_scan_min_price_change_pct:
-                continue
+            # On testnet, synthetic volume is near-zero — skip volume/volatility filters
+            if not settings.binance_testnet:
+                if quote_volume < settings.pair_scan_min_volume_usdt:
+                    continue
+                if price_change_pct < settings.pair_scan_min_price_change_pct:
+                    continue
 
             candidates.append((symbol, quote_volume))
 
