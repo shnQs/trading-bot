@@ -46,6 +46,11 @@ async def lifespan(app: FastAPI):
     # Take an initial snapshot immediately
     await _portfolio_snapshot()
 
+    # Always seed candles on startup so the dashboard has data to display
+    logger.info("Seeding candle history...")
+    await bot_engine._seed_candles()
+    await bot_engine._reconcile_on_startup()
+
     # Auto-start bot if configured
     if settings.bot_enabled:
         logger.info("BOT_ENABLED=true — starting bot engine automatically")

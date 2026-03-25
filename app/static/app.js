@@ -67,12 +67,11 @@ function app() {
         handleScale: true,
       });
 
-      // Price chart
+      // Price chart — autoSize fills the container automatically
       this._priceChart = LightweightCharts.createChart(
         document.getElementById('priceChart'),
-        { ...chartOpts('priceChart'), width: 0, height: 0 }
+        { ...chartOpts('priceChart'), autoSize: true }
       );
-      this._priceChart.applyOptions({ width: document.getElementById('priceChart').clientWidth, height: document.getElementById('priceChart').clientHeight });
       this._candleSeries = this._priceChart.addCandlestickSeries({
         upColor: '#22c55e', downColor: '#ef4444',
         borderUpColor: '#22c55e', borderDownColor: '#ef4444',
@@ -84,7 +83,8 @@ function app() {
       // RSI chart
       this._rsiChart = LightweightCharts.createChart(
         document.getElementById('rsiChart'),
-        { layout: { background: { color: '#030712' }, textColor: '#6b7280' },
+        { autoSize: true,
+          layout: { background: { color: '#030712' }, textColor: '#6b7280' },
           grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
           rightPriceScale: { borderColor: '#1f2937', scaleMargins: { top: 0.1, bottom: 0.1 } },
           timeScale: { visible: false }, handleScroll: false, handleScale: false }
@@ -94,7 +94,8 @@ function app() {
       // MACD chart
       this._macdChart = LightweightCharts.createChart(
         document.getElementById('macdChart'),
-        { layout: { background: { color: '#030712' }, textColor: '#6b7280' },
+        { autoSize: true,
+          layout: { background: { color: '#030712' }, textColor: '#6b7280' },
           grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
           rightPriceScale: { borderColor: '#1f2937', scaleMargins: { top: 0.1, bottom: 0.1 } },
           timeScale: { visible: false }, handleScroll: false, handleScale: false }
@@ -105,19 +106,6 @@ function app() {
         color: '#22c55e',
         priceFormat: { type: 'price', precision: 6, minMove: 0.000001 },
       });
-
-      // Resize observer
-      const ro = new ResizeObserver(() => {
-        const pc = document.getElementById('priceChart');
-        this._priceChart.applyOptions({ width: pc.clientWidth, height: pc.clientHeight });
-        const rc = document.getElementById('rsiChart');
-        this._rsiChart.applyOptions({ width: rc.clientWidth, height: rc.clientHeight });
-        const mc = document.getElementById('macdChart');
-        this._macdChart.applyOptions({ width: mc.clientWidth, height: mc.clientHeight });
-      });
-      ro.observe(document.getElementById('priceChart'));
-      ro.observe(document.getElementById('rsiChart'));
-      ro.observe(document.getElementById('macdChart'));
     },
 
     async loadCandles() {
