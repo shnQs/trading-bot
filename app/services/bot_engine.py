@@ -22,6 +22,7 @@ class BotEngine:
     def __init__(self):
         self.running: bool = False
         self._last_signals: Dict[str, str] = {}
+        self._socket_tasks: Dict[str, asyncio.Task] = {}
 
     async def start(self) -> None:
         if self.running:
@@ -32,15 +33,86 @@ class BotEngine:
         await self._seed_candles()
         await self._reconcile_on_startup()
         for symbol in settings.trading_pairs:
-            exchange.start_kline_socket(
-                symbol=symbol,
-                interval=settings.candle_interval,
-                callback=self._make_kline_callback(symbol),
-            )
+            self._start_pair_socket(symbol)
 
     async def stop(self) -> None:
         self.running = False
         logger.info("Bot engine stopped — no new orders will be placed")
+
+    def _start_pair_socket(self, symbol: str) -> None:
+        """Start a kline WebSocket for a single symbol and track its task."""
+        task = exchange.start_kline_socket(
+            symbol=symbol,
+            interval=settings.candle_interval,
+            callback=self._make_kline_callback(symbol),
+        )
+        if task is not None:
+            self._socket_tasks[symbol] = task
+
+    async def add_pair(self, symbol: str) -> None:
+        """Seed candles, load filters, and start streaming a new symbol."""
+        if symbol in settings.trading_pairs:
+            return
+        logger.info("[BotEngine] Adding pair %s", symbol)
+        # Load filters
+        try:
+            info = await exchange.get_symbol_info(symbol)
+            step_size, min_notional = 1.0, 10.0
+            for f in info.get("filters", []):
+                if f["filterType"] == "LOT_SIZE":
+                    step_size = float(f["stepSize"])
+                elif f["filterType"] in ("MIN_NOTIONAL", "NOTIONAL"):
+                    min_notional = float(f.get("minNotional", f.get("minNotional", 10.0)))
+            risk_manager.set_symbol_filters(symbol, step_size, min_notional)
+        except Exception as e:
+            logger.warning("[BotEngine] Could not load filters for %s: %s", symbol, e)
+        # Seed candles
+        try:
+            klines = await exchange.get_klines(symbol, settings.candle_interval, limit=200)
+            async with AsyncSessionLocal() as db:
+                for k in klines:
+                    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                    stmt = sqlite_insert(OHLCV).values(
+                        symbol=symbol, interval=settings.candle_interval, **k
+                    ).on_conflict_do_nothing()
+                    await db.execute(stmt)
+                await db.commit()
+            logger.info("[BotEngine] Seeded %d candles for %s", len(klines), symbol)
+        except Exception as e:
+            logger.error("[BotEngine] Candle seed failed for %s: %s", symbol, e)
+        # Update pair list and start socket
+        settings.trading_pairs = list(settings.trading_pairs) + [symbol]
+        if self.running:
+            self._start_pair_socket(symbol)
+
+    async def remove_pair(self, symbol: str) -> None:
+        """Stop streaming a symbol (only if no open trade)."""
+        from app.models.trade import Trade
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Trade).where(Trade.symbol == symbol, Trade.status == "OPEN")
+            )
+            if result.scalar_one_or_none():
+                logger.info("[BotEngine] Keeping %s — open trade exists", symbol)
+                return
+        # Cancel socket task
+        task = self._socket_tasks.pop(symbol, None)
+        if task:
+            task.cancel()
+        # Update pair list
+        settings.trading_pairs = [p for p in settings.trading_pairs if p != symbol]
+        logger.info("[BotEngine] Removed pair %s", symbol)
+
+    async def update_pairs(self, new_symbols: list) -> None:
+        """Diff current vs new pair list and add/remove accordingly."""
+        current = set(settings.trading_pairs)
+        updated = set(new_symbols)
+        for sym in updated - current:
+            await self.add_pair(sym)
+        for sym in current - updated:
+            await self.remove_pair(sym)
+        logger.info("[BotEngine] Pairs updated: %s", settings.trading_pairs)
 
     def _make_kline_callback(self, symbol: str):
         async def callback(msg: dict) -> None:

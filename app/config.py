@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # Bot state
     bot_enabled: bool = False
 
+    # Pair scanner
+    pair_scan_enabled: bool = True
+    pair_scan_interval_minutes: int = 60
+    pair_scan_min_volume_usdt: float = 50_000_000
+    pair_scan_min_price_change_pct: float = 1.5
+    pair_scan_max_pairs: int = 10
+
     @property
     def binance_base_url(self) -> str:
         if self.binance_testnet:

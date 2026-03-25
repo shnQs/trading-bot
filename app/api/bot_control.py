@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter
@@ -5,6 +6,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.services.bot_engine import bot_engine
+from app.services.pair_scanner import pair_scanner
 
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
@@ -19,6 +21,8 @@ class BotStatus(BaseModel):
     take_profit_pct: float
     candle_interval: str
     testnet: bool
+    last_scan_time: datetime | None = None
+    pair_scan_enabled: bool = True
 
 
 class ConfigUpdate(BaseModel):
@@ -40,6 +44,8 @@ async def get_status():
         take_profit_pct=settings.take_profit_pct,
         candle_interval=settings.candle_interval,
         testnet=settings.binance_testnet,
+        last_scan_time=pair_scanner.last_scan_time,
+        pair_scan_enabled=settings.pair_scan_enabled,
     )
 
 
@@ -71,3 +77,15 @@ async def update_config(update: ConfigUpdate):
         "stop_loss_pct": settings.stop_loss_pct,
         "take_profit_pct": settings.take_profit_pct,
     }}
+
+
+@router.post("/scan")
+async def trigger_scan():
+    """Manually trigger a pair rescan and update active pairs."""
+    new_pairs = await pair_scanner.scan()
+    await bot_engine.update_pairs(new_pairs)
+    return {
+        "status": "scanned",
+        "pairs": settings.trading_pairs,
+        "last_scan_time": pair_scanner.last_scan_time,
+    }

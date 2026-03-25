@@ -131,9 +131,13 @@ class BinanceClient:
     async def get_order(self, symbol: str, order_id: str) -> dict:
         return await self._client.get_order(symbol=symbol, orderId=order_id)
 
+    async def get_tickers_24hr(self) -> List[dict]:
+        """Fetch 24h ticker stats for all symbols."""
+        return await self._client.get_ticker()
+
     def start_kline_socket(
         self, symbol: str, interval: str, callback: Callable
-    ) -> None:
+    ) -> asyncio.Task:
         async def _run():
             async with self._bsm.kline_socket(
                 symbol=symbol, interval=interval
@@ -146,6 +150,7 @@ class BinanceClient:
         task = asyncio.create_task(_run())
         self._socket_tasks.append(task)
         logger.info("Kline socket started: %s %s", symbol, interval)
+        return task
 
 
 # Singleton

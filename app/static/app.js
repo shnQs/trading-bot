@@ -17,6 +17,8 @@ function app() {
   return {
     // --- Reactive state (safe for Alpine proxy) ---
     wsConnected: false,
+    scanning: false,
+    lastScanTime: null,
     selectedSymbol: 'BTCUSDT',
     botStatus: {
       running: false,
@@ -63,6 +65,7 @@ function app() {
       const res = await fetch('/api/bot/status');
       if (!res.ok) return;
       this.botStatus = await res.json();
+      this.lastScanTime = this.botStatus.last_scan_time ?? null;
       this.config = {
         risk_per_trade_pct: this.botStatus.risk_per_trade_pct,
         max_open_trades: this.botStatus.max_open_trades,
@@ -110,6 +113,25 @@ function app() {
         body: JSON.stringify(this.config),
       });
       this.showToast(res.ok ? 'Config saved' : 'Failed to save config', res.ok ? 'info' : 'error');
+    },
+
+    async rescan() {
+      this.scanning = true;
+      try {
+        const res = await fetch('/api/bot/scan', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          this.botStatus.trading_pairs = data.pairs;
+          this.lastScanTime = data.last_scan_time;
+          this.selectedSymbol = data.pairs[0] ?? this.selectedSymbol;
+          await loadCandles(this.selectedSymbol);
+          this.showToast(`Scan complete — ${data.pairs.length} pairs found`, 'info');
+        } else {
+          this.showToast('Scan failed', 'error');
+        }
+      } finally {
+        this.scanning = false;
+      }
     },
 
     showToast(message, type = 'info') {

@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import init_db
 from app.services.exchange import exchange
 from app.services.bot_engine import bot_engine
+from app.services.pair_scanner import pair_scanner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +29,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("Connecting to Binance (testnet=%s)...", settings.binance_testnet)
     await exchange.connect()
+
+    # If pair scanning enabled, discover pairs first then load their filters
+    if settings.pair_scan_enabled:
+        logger.info("Scanning for trading pairs...")
+        discovered = await pair_scanner.scan()
+        settings.trading_pairs = discovered
 
     logger.info("Loading symbol filters...")
     await bot_engine.load_symbol_filters()
@@ -54,6 +61,19 @@ async def lifespan(app: FastAPI):
         })
 
     scheduler.add_job(_portfolio_snapshot, "interval", minutes=5, id="portfolio_snapshot")
+
+    if settings.pair_scan_enabled:
+        async def _pair_scan():
+            discovered = await pair_scanner.scan()
+            await bot_engine.update_pairs(discovered)
+
+        scheduler.add_job(
+            _pair_scan,
+            "interval",
+            minutes=settings.pair_scan_interval_minutes,
+            id="pair_scan",
+        )
+
     scheduler.start()
 
     # Take an initial snapshot immediately

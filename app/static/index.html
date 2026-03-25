@@ -44,6 +44,9 @@
     .btn    { border: none; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; color: #fff; font-family: inherit; padding: 5px 12px; }
     .btn-go   { background: #15803d; } .btn-go:hover   { background: #16a34a; }
     .btn-stop { background: #b91c1c; } .btn-stop:hover { background: #dc2626; }
+    .btn-scan { background: #1d4ed8; } .btn-scan:hover { background: #2563eb; }
+    .badge-scan-on  { background: #14532d; color: #86efac; }
+    .badge-scan-off { background: #292524; color: #a8a29e; }
     .btn-save { background: #a16207; font-size: 11px; padding: 3px 10px; } .btn-save:hover { background: #ca8a04; }
 
     /* ─── Statsbar ─────────────────────────────────────────────────── */
@@ -179,6 +182,9 @@
     <div class="t-right">
       <span class="dot" :class="wsConnected ? 'dot-on' : 'dot-off'"></span>
       <span class="ws-lbl" x-text="wsConnected ? 'Live' : 'Disconnected'"></span>
+      <span class="badge" :class="botStatus.pair_scan_enabled ? 'badge-scan-on' : 'badge-scan-off'"
+            x-text="botStatus.pair_scan_enabled ? '⟳ Auto-scan' : 'Manual pairs'"></span>
+      <button class="btn btn-scan" @click="rescan()" x-text="scanning ? 'Scanning...' : 'Rescan'"></button>
       <button class="btn" :class="botStatus.running ? 'btn-stop' : 'btn-go'"
               @click="toggleBot()"
               x-text="botStatus.running ? '⏹ Stop Bot' : '▶ Start Bot'"></button>
