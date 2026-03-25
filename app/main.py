@@ -38,7 +38,20 @@ async def lifespan(app: FastAPI):
 
     async def _portfolio_snapshot():
         async with AsyncSessionLocal() as db:
-            await portfolio_service.take_snapshot(db)
+            snapshot = await portfolio_service.take_snapshot(db)
+        from app.api.ws import ws_manager
+        await ws_manager.broadcast({
+            "type": "portfolio_update",
+            "data": {
+                "total_balance_usdt": snapshot.total_balance_usdt,
+                "realized_pnl_today": snapshot.realized_pnl_today,
+                "realized_pnl_total": snapshot.realized_pnl_total,
+                "win_count": snapshot.win_count,
+                "loss_count": snapshot.loss_count,
+                "max_drawdown_pct": snapshot.max_drawdown_pct,
+                "open_trades_count": snapshot.open_trades_count,
+            },
+        })
 
     scheduler.add_job(_portfolio_snapshot, "interval", minutes=5, id="portfolio_snapshot")
     scheduler.start()

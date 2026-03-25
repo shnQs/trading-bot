@@ -28,10 +28,15 @@ class PortfolioService:
         # Unrealized PnL from open trades (rough estimate based on entry price)
         result = await db.execute(select(Trade).where(Trade.status == "OPEN"))
         open_trades = result.scalars().all()
-        unrealized_pnl = sum(
-            (t.entry_price * 0.0)  # placeholder; real calc needs current price
-            for t in open_trades
-        )
+        unrealized_pnl = 0.0
+        for t in open_trades:
+            try:
+                klines = await exchange.get_klines(t.symbol, "1m", limit=1)
+                if klines:
+                    current_price = klines[-1]["close"]
+                    unrealized_pnl += (current_price - t.entry_price) * t.quantity
+            except Exception:
+                pass
 
         # Realized PnL — all time
         total_pnl_result = await db.execute(

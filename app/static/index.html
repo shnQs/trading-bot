@@ -4,218 +4,275 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trading Bot Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
-    /* Chart layout — plain CSS, no Tailwind, guaranteed at parse time */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; overflow: hidden; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #030712; }
+    body { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #e5e7eb; }
 
-    #app { display: flex; flex-direction: column; height: 100vh; background: #030712; color: #e5e7eb; font-family: ui-monospace, monospace; font-size: 13px; }
+    /* ─── Root fills the viewport exactly ─────────────────────────── */
+    #app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      background: #030712;
+    }
 
-    #topbar    { flex-shrink: 0; }
-    #statsbar  { flex-shrink: 0; }
+    /* ─── Topbar ───────────────────────────────────────────────────── */
+    #topbar {
+      height: 44px;
+      flex-shrink: 0;
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .t-left  { display: flex; align-items: center; gap: 12px; }
+    .t-right { display: flex; align-items: center; gap: 14px; }
+    .brand   { font-size: 15px; font-weight: 700; color: #facc15; }
+    .badge   { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+    .badge-test { background: #1e3a5f; color: #93c5fd; }
+    .badge-live { background: #450a0a; color: #fca5a5; }
+    .dot    { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+    .dot-on { background: #4ade80; }
+    .dot-off{ background: #ef4444; }
+    .ws-lbl { color: #9ca3af; font-size: 12px; }
+    .btn    { border: none; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; color: #fff; font-family: inherit; padding: 5px 12px; }
+    .btn-go   { background: #15803d; } .btn-go:hover   { background: #16a34a; }
+    .btn-stop { background: #b91c1c; } .btn-stop:hover { background: #dc2626; }
+    .btn-save { background: #a16207; font-size: 11px; padding: 3px 10px; } .btn-save:hover { background: #ca8a04; }
 
-    #main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+    /* ─── Statsbar ─────────────────────────────────────────────────── */
+    #statsbar {
+      height: 34px;
+      flex-shrink: 0;
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .sl  { color: #6b7280; }
+    .sv  { font-weight: 600; color: #f9fafb; }
+    .pos { font-weight: 600; color: #4ade80; }
+    .neg { font-weight: 600; color: #f87171; }
+    .ps  { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    select { background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 2px 8px; color: #f9fafb; font-size: 12px; font-family: inherit; }
 
-    /* Left: chart column */
-    #chartCol { display: flex; flex-direction: column; flex: 1; min-width: 0; border-right: 1px solid #1f2937; }
-    #chartContainer { flex: 1; min-height: 0; position: relative; }
-    #priceChart     { position: absolute; inset: 0; }
-    #chartLegend    { position: absolute; top: 8px; left: 8px; display: flex; gap: 12px; font-size: 11px; pointer-events: none; z-index: 10; }
+    /* ─── Main row ─────────────────────────────────────────────────── */
+    #main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+    }
 
-    #rsiContainer   { height: 100px; flex-shrink: 0; border-top: 1px solid #1f2937; position: relative; }
-    #rsiChart       { position: absolute; inset: 0; }
-    #rsiLabel       { position: absolute; top: 4px; left: 8px; font-size: 11px; color: #6b7280; pointer-events: none; z-index: 10; }
+    /* ─── Chart column ─────────────────────────────────────────────── */
+    #chartCol {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid #1f2937;
+    }
 
-    #macdContainer  { height: 100px; flex-shrink: 0; border-top: 1px solid #1f2937; position: relative; }
-    #macdChart      { position: absolute; inset: 0; }
-    #macdLabel      { position: absolute; top: 4px; left: 8px; font-size: 11px; color: #6b7280; pointer-events: none; z-index: 10; }
+    /* Price chart fills remaining space */
+    #priceWrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    #priceChart { position: absolute; inset: 0; }
 
-    /* Right: sidebar */
-    #sidebar { width: 384px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
+    #chartLegend {
+      position: absolute; top: 8px; left: 8px;
+      display: flex; gap: 12px; font-size: 11px;
+      pointer-events: none; z-index: 10; color: #8b949e;
+    }
+    .leg { display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 3px; }
+
+    /* RSI and MACD are fixed-height slots */
+    #rsiWrap, #macdWrap {
+      height: 100px;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+      border-top: 1px solid #1f2937;
+    }
+    #rsiChart, #macdChart { position: absolute; inset: 0; }
+    .chart-lbl {
+      position: absolute; top: 4px; left: 8px;
+      font-size: 11px; color: #6b7280;
+      pointer-events: none; z-index: 10;
+    }
+
+    /* ─── Sidebar ──────────────────────────────────────────────────── */
+    #sidebar {
+      width: 360px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0a0f1a;
+    }
+
+    /* Risk config */
+    #riskCfg {
+      flex-shrink: 0;
+      padding: 10px 12px;
+      border-bottom: 1px solid #1f2937;
+    }
+    .cfghdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .cfgtit { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; }
+    .cfggrd { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cfgf   { display: flex; flex-direction: column; gap: 3px; }
+    .cfgf label { font-size: 11px; color: #9ca3af; }
+    .cfgf input { background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 4px 8px; color: #f9fafb; font-size: 12px; font-family: inherit; width: 100%; }
+
+    /* Trade panels */
+    .tpanel { display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid #1f2937; }
+    #openPanel  { flex: 0 0 38%; }
+    #closedPanel{ flex: 1; }
+    .phdr { flex-shrink: 0; padding: 7px 12px; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #1f2937; }
+    .pscroll { overflow-y: auto; flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; }
+    tr    { border-bottom: 1px solid #111827; }
+    tr:hover { background: #111827; }
+    td    { padding: 6px 10px; font-size: 12px; vertical-align: top; }
+    .tr   { text-align: right; }
+    .sym  { font-weight: 600; color: #f9fafb; }
+    .dim  { color: #6b7280; font-size: 11px; }
+    .green{ color: #4ade80; }
+    .red  { color: #f87171; }
+    .empty{ color: #4b5563; text-align: center; padding: 16px; font-size: 12px; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 16px; right: 16px;
+      padding: 10px 16px; border-radius: 6px;
+      font-size: 13px; font-weight: 500; z-index: 100;
+    }
+    #toast.info  { background: #15803d; color: #fff; }
+    #toast.error { background: #b91c1c; color: #fff; }
   </style>
 </head>
 <body>
+<div id="app" x-data="app()">
 
-<div id="app" x-data="app()" x-init="init()">
-
-  <!-- Top bar -->
-  <header id="topbar" class="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <span class="text-base font-bold text-yellow-400">⚡ TradingBot</span>
-      <span class="text-xs px-2 py-0.5 rounded"
-            :class="botStatus.testnet ? 'bg-blue-900 text-blue-300' : 'bg-red-900 text-red-300'">
-        <span x-text="botStatus.testnet ? 'TESTNET' : 'LIVE'"></span>
-      </span>
+  <header id="topbar">
+    <div class="t-left">
+      <span class="brand">⚡ TradingBot</span>
+      <span class="badge" :class="botStatus.testnet ? 'badge-test' : 'badge-live'"
+            x-text="botStatus.testnet ? 'TESTNET' : 'LIVE'"></span>
     </div>
-    <div class="flex items-center gap-4">
-      <div class="flex items-center gap-1.5 text-xs">
-        <span class="w-2 h-2 rounded-full" :class="wsConnected ? 'bg-green-400' : 'bg-red-500'"></span>
-        <span x-text="wsConnected ? 'Live' : 'Disconnected'" class="text-gray-400"></span>
-      </div>
-      <button @click="toggleBot()"
-              class="px-3 py-1.5 rounded text-xs font-semibold"
-              :class="botStatus.running ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-green-700 hover:bg-green-600 text-white'">
-        <span x-text="botStatus.running ? '⏹ Stop Bot' : '▶ Start Bot'"></span>
-      </button>
+    <div class="t-right">
+      <span class="dot" :class="wsConnected ? 'dot-on' : 'dot-off'"></span>
+      <span class="ws-lbl" x-text="wsConnected ? 'Live' : 'Disconnected'"></span>
+      <button class="btn" :class="botStatus.running ? 'btn-stop' : 'btn-go'"
+              @click="toggleBot()"
+              x-text="botStatus.running ? '⏹ Stop Bot' : '▶ Start Bot'"></button>
     </div>
   </header>
 
-  <!-- Stats bar -->
-  <div id="statsbar" class="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-6 text-xs overflow-x-auto">
-    <div><span class="text-gray-500">Balance </span><span class="font-semibold text-white" x-text="fmt(portfolio.total_balance_usdt) + ' USDT'">—</span></div>
-    <div><span class="text-gray-500">Today PnL </span>
-      <span class="font-semibold" :class="portfolio.realized_pnl_today >= 0 ? 'text-green-400' : 'text-red-400'" x-text="fmtPnl(portfolio.realized_pnl_today) + ' USDT'">—</span></div>
-    <div><span class="text-gray-500">Total PnL </span>
-      <span class="font-semibold" :class="portfolio.realized_pnl_total >= 0 ? 'text-green-400' : 'text-red-400'" x-text="fmtPnl(portfolio.realized_pnl_total) + ' USDT'">—</span></div>
-    <div><span class="text-gray-500">Win Rate </span><span class="font-semibold text-white" x-text="winRate() + '%'">—</span></div>
-    <div><span class="text-gray-500">Open </span><span class="font-semibold text-white" x-text="portfolio.open_trades_count ?? 0">—</span></div>
-    <div><span class="text-gray-500">Max DD </span><span class="font-semibold text-red-400" x-text="(portfolio.max_drawdown_pct ?? 0).toFixed(2) + '%'">—</span></div>
-    <div class="ml-auto flex items-center gap-2">
-      <span class="text-gray-500">Pair:</span>
-      <select x-model="selectedSymbol" @change="loadCandles()" class="bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-white text-xs">
+  <div id="statsbar">
+    <span><span class="sl">Balance </span><span class="sv" x-text="fmt(portfolio.total_balance_usdt) + ' USDT'"></span></span>
+    <span><span class="sl">Today PnL </span><span :class="portfolio.realized_pnl_today >= 0 ? 'pos' : 'neg'" x-text="fmtPnl(portfolio.realized_pnl_today) + ' USDT'"></span></span>
+    <span><span class="sl">Total PnL </span><span :class="portfolio.realized_pnl_total >= 0 ? 'pos' : 'neg'" x-text="fmtPnl(portfolio.realized_pnl_total) + ' USDT'"></span></span>
+    <span><span class="sl">Win Rate </span><span class="sv" x-text="winRate() + '%'"></span></span>
+    <span><span class="sl">Open </span><span class="sv" x-text="portfolio.open_trades_count ?? 0"></span></span>
+    <span><span class="sl">Max DD </span><span class="red" x-text="(portfolio.max_drawdown_pct ?? 0).toFixed(2) + '%'"></span></span>
+    <span class="ps">
+      <span class="sl">Pair:</span>
+      <select x-model="selectedSymbol" @change="loadCandles()">
         <template x-for="pair in botStatus.trading_pairs" :key="pair">
           <option :value="pair" x-text="pair"></option>
         </template>
       </select>
-    </div>
+    </span>
   </div>
 
-  <!-- Main -->
   <div id="main">
 
-    <!-- Chart column -->
     <div id="chartCol">
-      <div id="chartContainer">
+      <div id="priceWrap">
         <div id="priceChart"></div>
         <div id="chartLegend">
-          <span style="color:#8b949e">
-            <span style="display:inline-block;width:12px;height:2px;background:#58a6ff;vertical-align:middle;margin-right:3px"></span>EMA9
-          </span>
-          <span style="color:#8b949e">
-            <span style="display:inline-block;width:12px;height:2px;background:#bc8cff;vertical-align:middle;margin-right:3px"></span>EMA21
-          </span>
+          <span><span class="leg" style="background:#58a6ff"></span>EMA9</span>
+          <span><span class="leg" style="background:#bc8cff"></span>EMA21</span>
         </div>
       </div>
-      <div id="rsiContainer">
+      <div id="rsiWrap">
         <div id="rsiChart"></div>
-        <span id="rsiLabel">RSI(14)</span>
+        <span class="chart-lbl">RSI(14)</span>
       </div>
-      <div id="macdContainer">
+      <div id="macdWrap">
         <div id="macdChart"></div>
-        <span id="macdLabel">MACD(12,26,9)</span>
+        <span class="chart-lbl">MACD(12,26,9)</span>
       </div>
     </div>
 
-    <!-- Sidebar -->
-    <div id="sidebar" class="bg-gray-950">
-
-      <!-- Risk config -->
-      <div class="border-b border-gray-800 p-3 flex-shrink-0">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Risk Config</span>
-          <button @click="saveConfig()" class="text-xs bg-yellow-600 hover:bg-yellow-500 px-2 py-0.5 rounded text-white">Save</button>
+    <div id="sidebar">
+      <div id="riskCfg">
+        <div class="cfghdr">
+          <span class="cfgtit">Risk Config</span>
+          <button class="btn btn-save" @click="saveConfig()">Save</button>
         </div>
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <label class="flex flex-col gap-0.5">
-            <span class="text-gray-500">Risk/Trade %</span>
-            <input type="number" step="0.1" x-model.number="config.risk_per_trade_pct"
-                   class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white w-full"/>
-          </label>
-          <label class="flex flex-col gap-0.5">
-            <span class="text-gray-500">Max Trades</span>
-            <input type="number" step="1" x-model.number="config.max_open_trades"
-                   class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white w-full"/>
-          </label>
-          <label class="flex flex-col gap-0.5">
-            <span class="text-gray-500">Stop Loss %</span>
-            <input type="number" step="0.1" x-model.number="config.stop_loss_pct"
-                   class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white w-full"/>
-          </label>
-          <label class="flex flex-col gap-0.5">
-            <span class="text-gray-500">Take Profit %</span>
-            <input type="number" step="0.1" x-model.number="config.take_profit_pct"
-                   class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white w-full"/>
-          </label>
+        <div class="cfggrd">
+          <div class="cfgf"><label for="cfg-risk">Risk/Trade %</label><input id="cfg-risk" name="risk_per_trade_pct" type="number" step="0.1" x-model.number="config.risk_per_trade_pct"/></div>
+          <div class="cfgf"><label for="cfg-max">Max Trades</label><input id="cfg-max" name="max_open_trades" type="number" step="1" x-model.number="config.max_open_trades"/></div>
+          <div class="cfgf"><label for="cfg-sl">Stop Loss %</label><input id="cfg-sl" name="stop_loss_pct" type="number" step="0.1" x-model.number="config.stop_loss_pct"/></div>
+          <div class="cfgf"><label for="cfg-tp">Take Profit %</label><input id="cfg-tp" name="take_profit_pct" type="number" step="0.1" x-model.number="config.take_profit_pct"/></div>
         </div>
       </div>
 
-      <!-- Open trades -->
-      <div class="flex flex-col border-b border-gray-800 flex-shrink-0" style="max-height:40%">
-        <div class="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-800">
-          Open Trades (<span x-text="openTrades.length"></span>)
-        </div>
-        <div class="overflow-y-auto">
-          <template x-if="openTrades.length === 0">
-            <p class="text-gray-600 text-xs text-center py-4">No open trades</p>
-          </template>
-          <table class="w-full text-xs">
-            <tbody>
-              <template x-for="t in openTrades" :key="t.id">
-                <tr class="border-b border-gray-900 hover:bg-gray-900">
-                  <td class="px-2 py-1.5">
-                    <div class="font-semibold text-white" x-text="t.symbol"></div>
-                    <div class="text-gray-500" x-text="'Entry: ' + fmt(t.entry_price)"></div>
-                  </td>
-                  <td class="px-2 py-1.5 text-right">
-                    <div class="text-gray-400" x-text="fmt(t.quantity) + ' qty'"></div>
-                    <div class="text-gray-400 text-xs">SL: <span x-text="fmt(t.stop_loss)"></span></div>
-                  </td>
-                  <td class="px-2 py-1.5 text-right">
-                    <div class="text-gray-400 text-xs">TP: <span x-text="fmt(t.take_profit)"></span></div>
-                    <div class="text-gray-500 text-xs" x-text="timeSince(t.entry_time)"></div>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+      <div class="tpanel" id="openPanel">
+        <div class="phdr">Open Trades (<span x-text="openTrades.length"></span>)</div>
+        <div class="pscroll">
+          <template x-if="openTrades.length === 0"><p class="empty">No open trades</p></template>
+          <table><tbody>
+            <template x-for="t in openTrades" :key="t.id">
+              <tr>
+                <td><div class="sym" x-text="t.symbol"></div><div class="dim" x-text="'Entry: ' + fmt(t.entry_price)"></div></td>
+                <td class="tr"><div class="dim" x-text="fmt(t.quantity) + ' qty'"></div><div class="dim">SL: <span x-text="fmt(t.stop_loss)"></span></div></td>
+                <td class="tr"><div class="dim">TP: <span x-text="fmt(t.take_profit)"></span></div><div class="dim" x-text="timeSince(t.entry_time)"></div></td>
+              </tr>
+            </template>
+          </tbody></table>
         </div>
       </div>
 
-      <!-- Closed trades -->
-      <div class="flex flex-col flex-1 overflow-hidden">
-        <div class="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-800">
-          Trade History (<span x-text="closedTrades.length"></span>)
-        </div>
-        <div class="overflow-y-auto flex-1">
-          <template x-if="closedTrades.length === 0">
-            <p class="text-gray-600 text-xs text-center py-4">No closed trades yet</p>
-          </template>
-          <table class="w-full text-xs">
-            <tbody>
-              <template x-for="t in closedTrades" :key="t.id">
-                <tr class="border-b border-gray-900 hover:bg-gray-900">
-                  <td class="px-2 py-1.5">
-                    <div class="font-semibold text-white" x-text="t.symbol"></div>
-                    <div class="text-gray-500" x-text="fmt(t.entry_price) + ' → ' + fmt(t.exit_price)"></div>
-                  </td>
-                  <td class="px-2 py-1.5 text-right">
-                    <div :class="t.pnl_usdt >= 0 ? 'text-green-400' : 'text-red-400'" x-text="fmtPnl(t.pnl_usdt) + ' USDT'"></div>
-                    <div :class="t.pnl_pct >= 0 ? 'text-green-500' : 'text-red-500'" x-text="fmtPnl(t.pnl_pct) + '%'"></div>
-                  </td>
-                  <td class="px-2 py-1.5 text-right text-gray-500">
-                    <div x-text="t.exit_reason || '—'"></div>
-                    <div x-text="formatDate(t.exit_time)"></div>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+      <div class="tpanel" id="closedPanel">
+        <div class="phdr">Trade History (<span x-text="closedTrades.length"></span>)</div>
+        <div class="pscroll">
+          <template x-if="closedTrades.length === 0"><p class="empty">No closed trades yet</p></template>
+          <table><tbody>
+            <template x-for="t in closedTrades" :key="t.id">
+              <tr>
+                <td><div class="sym" x-text="t.symbol"></div><div class="dim" x-text="fmt(t.entry_price) + ' → ' + fmt(t.exit_price)"></div></td>
+                <td class="tr"><div :class="t.pnl_usdt >= 0 ? 'green' : 'red'" x-text="fmtPnl(t.pnl_usdt) + ' USDT'"></div><div :class="t.pnl_pct >= 0 ? 'green' : 'red'" x-text="fmtPnl(t.pnl_pct) + '%'"></div></td>
+                <td class="tr"><div class="dim" x-text="t.exit_reason || '—'"></div><div class="dim" x-text="formatDate(t.exit_time)"></div></td>
+              </tr>
+            </template>
+          </tbody></table>
         </div>
       </div>
     </div>
+
   </div>
 
-  <!-- Toast -->
-  <div x-show="toast.show" x-transition
-       class="fixed bottom-4 right-4 px-4 py-2 rounded shadow-lg text-sm z-50"
-       :class="toast.type === 'error' ? 'bg-red-700' : 'bg-green-700'"
-       x-text="toast.message"></div>
-
+  <div id="toast" x-show="toast.show" x-transition :class="toast.type" x-text="toast.message"></div>
 </div>
-
-<script src="/app.js"></script>
+<script src="/app.js?v=5"></script>
 </body>
 </html>

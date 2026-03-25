@@ -21,7 +21,8 @@ async def get_ohlcv(
     result = await db.execute(
         select(OHLCV)
         .where(OHLCV.symbol == symbol.upper(), OHLCV.interval == settings.candle_interval)
-        .order_by(OHLCV.open_time.asc())
+        .order_by(OHLCV.open_time.desc())
         .limit(limit)
     )
-    return result.scalars().all()
+    rows = result.scalars().all()
+    return list(reversed(rows))

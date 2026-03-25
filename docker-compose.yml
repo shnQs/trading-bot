@@ -9,6 +9,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
+      - ./app/static:/app/app/static:ro
     env_file:
       - .env
     restart: unless-stopped
