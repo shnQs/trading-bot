@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh:*)",
+      "Bash(dir /c/Users/shinqs/Documents/GITLAB/trading_bot/)",
+      "Bash(find /c/Users/shinqs/Documents/GITLAB/trading_bot -type f -name *)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
