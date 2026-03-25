@@ -46,8 +46,6 @@ function app() {
     _pollTimer: null,
 
     async init() {
-      // Wait two animation frames so the browser finishes flex layout before measuring
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       this._initCharts();
       await this.fetchStatus();
       await this.loadCandles();
@@ -55,77 +53,71 @@ function app() {
       await this.fetchTrades();
       this._connectWS();
       this._startPolling();
-      // Handle window resize
-      window.addEventListener('resize', () => this._resizeCharts());
-    },
-
-    _chartSize(id) {
-      const el = document.getElementById(id);
-      return { width: el.clientWidth || el.offsetWidth, height: el.clientHeight || el.offsetHeight };
-    },
-
-    _resizeCharts() {
-      if (this._priceChart) {
-        const s = this._chartSize('priceChart');
-        if (s.width > 0 && s.height > 0) this._priceChart.resize(s.width, s.height);
-      }
-      if (this._rsiChart) {
-        const s = this._chartSize('rsiChart');
-        if (s.width > 0 && s.height > 0) this._rsiChart.resize(s.width, s.height);
-      }
-      if (this._macdChart) {
-        const s = this._chartSize('macdChart');
-        if (s.width > 0 && s.height > 0) this._macdChart.resize(s.width, s.height);
-      }
     },
 
     _initCharts() {
-      const makeChart = (id, extraOpts) => {
-        const { width, height } = this._chartSize(id);
-        return LightweightCharts.createChart(document.getElementById(id), {
-          width: width || 800,
-          height: height || 400,
-          layout: { background: { color: '#030712' }, textColor: '#9ca3af' },
-          grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
-          rightPriceScale: { borderColor: '#1f2937' },
-          timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false },
-          ...extraOpts,
-        });
+      const chartEl = document.getElementById('priceChart');
+      const rsiEl   = document.getElementById('rsiChart');
+      const macdEl  = document.getElementById('macdChart');
+
+      const baseOpts = {
+        layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+        grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+        rightPriceScale: { borderColor: '#30363d' },
+        timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
       };
 
       // Price chart
-      this._priceChart = makeChart('priceChart', { crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, handleScroll: true, handleScale: true });
-      this._candleSeries = this._priceChart.addCandlestickSeries({
-        upColor: '#22c55e', downColor: '#ef4444',
-        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
-        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+      this._priceChart = LightweightCharts.createChart(chartEl, {
+        ...baseOpts,
+        width: chartEl.offsetWidth,
+        height: chartEl.offsetHeight,
+        crosshair: { mode: 1 },
       });
-      this._ema9Series  = this._priceChart.addLineSeries({ color: '#60a5fa', lineWidth: 1, title: 'EMA9' });
-      this._ema21Series = this._priceChart.addLineSeries({ color: '#fb923c', lineWidth: 1, title: 'EMA21' });
+      this._candleSeries = this._priceChart.addCandlestickSeries({
+        upColor: '#3fb950', downColor: '#f85149',
+        borderUpColor: '#3fb950', borderDownColor: '#f85149',
+        wickUpColor: '#3fb950', wickDownColor: '#f85149',
+      });
+      this._ema9Series  = this._priceChart.addLineSeries({ color: '#58a6ff', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      this._ema21Series = this._priceChart.addLineSeries({ color: '#bc8cff', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
 
       // RSI chart
-      this._rsiChart = makeChart('rsiChart', {
-        layout: { background: { color: '#030712' }, textColor: '#6b7280' },
-        rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 } },
-        timeScale: { visible: false }, handleScroll: false, handleScale: false,
+      this._rsiChart = LightweightCharts.createChart(rsiEl, {
+        ...baseOpts,
+        width: rsiEl.offsetWidth,
+        height: rsiEl.offsetHeight,
+        rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
+        timeScale: { visible: false },
+        handleScroll: false, handleScale: false,
       });
-      this._rsiSeries = this._rsiChart.addLineSeries({ color: '#a78bfa', lineWidth: 1 });
+      this._rsiSeries = this._rsiChart.addLineSeries({ color: '#d29922', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
 
       // MACD chart
-      this._macdChart = makeChart('macdChart', {
-        layout: { background: { color: '#030712' }, textColor: '#6b7280' },
-        rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 } },
-        timeScale: { visible: false }, handleScroll: false, handleScale: false,
+      this._macdChart = LightweightCharts.createChart(macdEl, {
+        ...baseOpts,
+        width: macdEl.offsetWidth,
+        height: macdEl.offsetHeight,
+        rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
+        timeScale: { visible: false },
+        handleScroll: false, handleScale: false,
       });
-      this._macdLineSeries    = this._macdChart.addLineSeries({ color: '#60a5fa', lineWidth: 1 });
-      this._macdSignalSeries  = this._macdChart.addLineSeries({ color: '#f59e0b', lineWidth: 1 });
-      this._macdHistSeries    = this._macdChart.addHistogramSeries({
-        color: '#22c55e',
-        priceFormat: { type: 'price', precision: 6, minMove: 0.000001 },
+      this._macdLineSeries   = this._macdChart.addLineSeries({ color: '#58a6ff', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      this._macdSignalSeries = this._macdChart.addLineSeries({ color: '#f0883e', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      this._macdHistSeries   = this._macdChart.addHistogramSeries({ priceFormat: { type: 'price', precision: 6, minMove: 0.000001 } });
+
+      // Sync crosshair scroll between price and RSI
+      this._priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (range) this._rsiChart.timeScale().setVisibleLogicalRange(range);
+        if (range) this._macdChart.timeScale().setVisibleLogicalRange(range);
       });
 
-      // Correct size after a brief delay (Tailwind CDN may still be injecting styles)
-      setTimeout(() => this._resizeCharts(), 200);
+      // ResizeObserver — use applyOptions (same as working project)
+      new ResizeObserver(() => {
+        if (this._priceChart) this._priceChart.applyOptions({ width: chartEl.offsetWidth, height: chartEl.offsetHeight });
+        if (this._rsiChart)   this._rsiChart.applyOptions({ width: rsiEl.offsetWidth, height: rsiEl.offsetHeight });
+        if (this._macdChart)  this._macdChart.applyOptions({ width: macdEl.offsetWidth, height: macdEl.offsetHeight });
+      }).observe(document.getElementById('chartCol'));
     },
 
     async loadCandles() {
