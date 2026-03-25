@@ -69,11 +69,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(api_router)
-
-app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "testnet": settings.binance_testnet, "bot_running": bot_engine.running}
+
+app.include_router(api_router)
+
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
