@@ -167,6 +167,20 @@
     .cfgf label { font-size: 11px; color: #9ca3af; }
     .cfgf input { background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 4px 8px; color: #f9fafb; font-size: 12px; font-family: inherit; width: 100%; }
 
+    /* Manual order panel */
+    #manualOrder {
+      flex-shrink: 0;
+      padding: 10px 12px;
+      border-bottom: 1px solid #1f2937;
+    }
+    .mo-row { display: flex; gap: 8px; align-items: flex-end; }
+    .mo-field { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+    .mo-field label { font-size: 11px; color: #9ca3af; }
+    .mo-field input { background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 4px 8px; color: #f9fafb; font-size: 12px; font-family: inherit; width: 100%; }
+    .btn-buy  { background: #15803d; padding: 5px 14px; } .btn-buy:hover  { background: #16a34a; }
+    .btn-close-trade { background: #7f1d1d; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; color: #fca5a5; font-family: inherit; padding: 2px 8px; white-space: nowrap; }
+    .btn-close-trade:hover { background: #b91c1c; color: #fff; }
+
     /* Trade panels */
     .tpanel { display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid #1f2937; }
     #openPanel  { flex: 0 0 38%; }
@@ -277,6 +291,23 @@
         </div>
       </div>
 
+      <div id="manualOrder">
+        <div class="cfghdr">
+          <span class="cfgtit">Manual Order</span>
+        </div>
+        <div class="mo-row">
+          <div class="mo-field">
+            <label>Symbol</label>
+            <input type="text" :value="selectedSymbol" readonly style="opacity:0.6;cursor:default"/>
+          </div>
+          <div class="mo-field">
+            <label>Amount (USDT)</label>
+            <input type="number" x-model.number="manualAmount" placeholder="50" min="1" step="1"/>
+          </div>
+          <button class="btn btn-buy" @click="manualBuy()" x-text="manualBuying ? 'Buying...' : 'BUY'"></button>
+        </div>
+      </div>
+
       <div class="tpanel" id="openPanel">
         <div class="phdr">Open Trades (<span x-text="openTrades.length"></span>)</div>
         <div class="pscroll">
@@ -287,6 +318,13 @@
                 <td><div class="sym" x-text="t.symbol"></div><div class="dim" x-text="'Entry: ' + fmt(t.entry_price)"></div></td>
                 <td class="tr"><div class="dim" x-text="fmt(t.quantity) + ' qty'"></div><div class="dim">SL: <span x-text="fmt(t.stop_loss)"></span></div></td>
                 <td class="tr"><div class="dim">TP: <span x-text="fmt(t.take_profit)"></span></div><div class="dim" x-text="timeSince(t.entry_time)"></div></td>
+                <td class="tr">
+                  <div :class="(unrealizedPnlUsdt(t) ?? 0) >= 0 ? 'green' : 'red'"
+                       x-text="unrealizedPnlUsdt(t) != null ? fmtPnl(unrealizedPnlUsdt(t)) + ' USDT' : '…'"></div>
+                  <div :class="(unrealizedPnlPct(t) ?? 0) >= 0 ? 'green' : 'red'"
+                       x-text="unrealizedPnlPct(t) != null ? fmtPnl(unrealizedPnlPct(t)) + '%' : ''"></div>
+                </td>
+                <td class="tr"><button class="btn-close-trade" @click="manualClose(t.id)">Close</button></td>
               </tr>
             </template>
           </tbody></table>

@@ -43,8 +43,12 @@ function app() {
     config: { risk_per_trade_pct: 1.0, max_open_trades: 3, stop_loss_pct: 2.0, take_profit_pct: 4.0 },
     openTrades: [],
     closedTrades: [],
+    latestPrices: {},
     toast: { show: false, message: '', type: 'info' },
     crosshairPrice: null,
+    manualSymbol: '',
+    manualAmount: 50,
+    manualBuying: false,
 
     // --- Lifecycle ---
     async init() {
@@ -56,6 +60,7 @@ function app() {
       await loadCandles(this.selectedSymbol, this.selectedInterval);
       await this.fetchPortfolio();
       await this.fetchTrades();
+      this.$watch('selectedSymbol', v => { this.manualSymbol = v; });
       connectWS(this);
       setInterval(async () => {
         await this.fetchPortfolio();
@@ -77,6 +82,7 @@ function app() {
       };
       if (this.botStatus.trading_pairs?.length) {
         this.selectedSymbol = this.botStatus.trading_pairs[0];
+        this.manualSymbol = this.selectedSymbol;
       }
     },
 
@@ -91,7 +97,20 @@ function app() {
         fetch('/api/trades?status=open&limit=20'),
         fetch('/api/trades?status=closed&limit=50'),
       ]);
-      if (openRes.ok) this.openTrades = await openRes.json();
+      if (openRes.ok) {
+        this.openTrades = await openRes.json();
+        // Seed latest prices from OHLCV for immediate PnL display
+        const symbols = [...new Set(this.openTrades.map(t => t.symbol))];
+        await Promise.all(symbols.map(async sym => {
+          if (this.latestPrices[sym] != null) return;
+          try {
+            const r = await fetch(`/api/ohlcv/${sym}?limit=1&interval=1m`);
+            if (!r.ok) return;
+            const d = await r.json();
+            if (d.length) this.latestPrices = { ...this.latestPrices, [sym]: d[d.length - 1].close };
+          } catch (_) {}
+        }));
+      }
       if (closedRes.ok) this.closedTrades = await closedRes.json();
     },
 
@@ -102,6 +121,40 @@ function app() {
     async changeInterval(iv) {
       this.selectedInterval = iv;
       await loadCandles(this.selectedSymbol, iv);
+    },
+
+    async manualBuy() {
+      const symbol = this.selectedSymbol.toUpperCase();
+      if (!symbol || !this.manualAmount) return;
+      this.manualBuying = true;
+      try {
+        const res = await fetch('/api/orders/buy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, usdt_amount: this.manualAmount }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          this.showToast(`Bought ${data.quantity} ${symbol} @ ${data.entry_price} (${data.usdt_spent} USDT)`, 'info');
+          await this.fetchTrades();
+        } else {
+          this.showToast(data.detail || 'Buy failed', 'error');
+        }
+      } finally {
+        this.manualBuying = false;
+      }
+    },
+
+    async manualClose(tradeId) {
+      const res = await fetch(`/api/orders/close/${tradeId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        const sign = data.pnl_usdt >= 0 ? '+' : '';
+        this.showToast(`Closed trade — PnL: ${sign}${Number(data.pnl_usdt).toFixed(2)} USDT`, res.ok ? 'info' : 'error');
+        await this.fetchTrades();
+      } else {
+        this.showToast(data.detail || 'Close failed', 'error');
+      }
     },
 
     async toggleBot() {
@@ -151,6 +204,16 @@ function app() {
     // --- Formatters ---
     fmt(n) { return n != null ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—'; },
     fmtPnl(n) { return n != null ? (n >= 0 ? '+' : '') + Number(n).toFixed(2) : '—'; },
+    unrealizedPnlUsdt(t) {
+      const price = this.latestPrices[t.symbol];
+      if (price == null) return null;
+      return (price - t.entry_price) * t.quantity;
+    },
+    unrealizedPnlPct(t) {
+      const price = this.latestPrices[t.symbol];
+      if (price == null || t.entry_price === 0) return null;
+      return ((price - t.entry_price) / t.entry_price) * 100;
+    },
     winRate() {
       const total = (this.portfolio.win_count ?? 0) + (this.portfolio.loss_count ?? 0);
       return total > 0 ? ((this.portfolio.win_count / total) * 100).toFixed(1) : '0.0';
@@ -270,8 +333,15 @@ function app() {
     const candles = await res.json();
     if (!candles.length) return;
 
-    const times = candles.map(c => Math.floor(c.open_time / 1000));
-    const closes = candles.map(c => c.close);
+    // Filter out testnet garbage candles where high/low are wildly off
+    const clean = candles.filter(c =>
+      c.high > 0 && c.low > 0 && c.open > 0 && c.close > 0 &&
+      c.high / c.open < 2.0 && c.low / c.open > 0.5
+    );
+    if (!clean.length) return;
+
+    const times = clean.map(c => Math.floor(c.open_time / 1000));
+    const closes = clean.map(c => c.close);
     const lastClose = closes[closes.length - 1];
     const pair = symbol.replace('USDT', '/USDT');
     document.title = `${Number(lastClose).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${pair} | Binance`;
@@ -281,7 +351,7 @@ function app() {
     ema9Series.applyOptions({ priceFormat: { type: 'price', ...fmt } });
     ema21Series.applyOptions({ priceFormat: { type: 'price', ...fmt } });
 
-    candleSeries.setData(candles.map(c => ({
+    candleSeries.setData(clean.map(c => ({
       time: Math.floor(c.open_time / 1000),
       open: c.open, high: c.high, low: c.low, close: c.close,
     })));
@@ -310,7 +380,9 @@ function app() {
     ws.onclose = () => { alpine.wsConnected = false; setTimeout(() => connectWS(alpine), 3000); };
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'candle' && msg.symbol === alpine.selectedSymbol && candleSeries) {
+      if (msg.type === 'candle') {
+        alpine.latestPrices = { ...alpine.latestPrices, [msg.symbol]: msg.data.close };
+        if (msg.symbol === alpine.selectedSymbol && candleSeries) {
         const c = msg.data;
         candleSeries.update({ time: Math.floor(c.open_time / 1000), open: c.open, high: c.high, low: c.low, close: c.close });
         const fmt = pricePrecision(c.close);
@@ -318,10 +390,12 @@ function app() {
         priceChart.timeScale().scrollToRealTime();
         const pair = alpine.selectedSymbol.replace('USDT', '/USDT');
         document.title = `${Number(c.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${pair} | Binance`;
+        }
       } else if (msg.type === 'portfolio_update') {
         alpine.portfolio = { ...alpine.portfolio, ...msg.data };
       } else if (msg.type === 'trade_update') {
         alpine.fetchTrades();
+        alpine.fetchPortfolio();
       }
     };
   }

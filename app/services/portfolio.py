@@ -15,6 +15,15 @@ class PortfolioService:
     def __init__(self):
         self._peak_balance: float = 0.0
 
+    async def init_peak_balance(self, db: AsyncSession) -> None:
+        result = await db.execute(
+            select(func.max(PortfolioSnapshot.total_balance_usdt))
+        )
+        peak = result.scalar()
+        if peak:
+            self._peak_balance = float(peak)
+            logger.info("Peak balance restored: %.2f USDT", self._peak_balance)
+
     async def take_snapshot(self, db: AsyncSession) -> PortfolioSnapshot:
         try:
             balances = await exchange.get_account_balance()

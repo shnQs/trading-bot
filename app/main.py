@@ -24,8 +24,15 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    from app.database import AsyncSessionLocal
+    from app.services.portfolio import portfolio_service
+
     logger.info("Initialising database...")
     await init_db()
+
+    # Restore peak balance from DB history
+    async with AsyncSessionLocal() as db:
+        await portfolio_service.init_peak_balance(db)
 
     logger.info("Connecting to Binance (testnet=%s)...", settings.binance_testnet)
     await exchange.connect()
@@ -39,9 +46,7 @@ async def lifespan(app: FastAPI):
     logger.info("Loading symbol filters...")
     await bot_engine.load_symbol_filters()
 
-    # Start portfolio snapshot scheduler (every 5 minutes)
-    from app.database import AsyncSessionLocal
-    from app.services.portfolio import portfolio_service
+    # Start portfolio snapshot scheduler (every 1 minute)
 
     async def _portfolio_snapshot():
         async with AsyncSessionLocal() as db:
@@ -60,7 +65,7 @@ async def lifespan(app: FastAPI):
             },
         })
 
-    scheduler.add_job(_portfolio_snapshot, "interval", minutes=5, id="portfolio_snapshot")
+    scheduler.add_job(_portfolio_snapshot, "interval", minutes=1, id="portfolio_snapshot")
 
     async def _broadcast_latest_candles():
         """Fetch the latest 1m candle for each pair and push to dashboard clients."""
