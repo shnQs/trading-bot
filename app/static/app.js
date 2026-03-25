@@ -20,6 +20,8 @@ function app() {
     scanning: false,
     lastScanTime: null,
     selectedSymbol: 'BTCUSDT',
+    selectedInterval: '1m',
+    intervals: ['1m', '5m', '15m', '1h', '4h', '1d'],
     botStatus: {
       running: false,
       testnet: true,
@@ -42,15 +44,16 @@ function app() {
     openTrades: [],
     closedTrades: [],
     toast: { show: false, message: '', type: 'info' },
+    crosshairPrice: null,
 
     // --- Lifecycle ---
     async init() {
       // Wait for browser to finish layout so offsetWidth/offsetHeight are non-zero
       await new Promise(r => requestAnimationFrame(r));
       await new Promise(r => requestAnimationFrame(r));
-      initCharts();
+      initCharts(this);
       await this.fetchStatus();
-      await loadCandles(this.selectedSymbol);
+      await loadCandles(this.selectedSymbol, this.selectedInterval);
       await this.fetchPortfolio();
       await this.fetchTrades();
       connectWS(this);
@@ -93,7 +96,12 @@ function app() {
     },
 
     async loadCandles() {
-      await loadCandles(this.selectedSymbol);
+      await loadCandles(this.selectedSymbol, this.selectedInterval);
+    },
+
+    async changeInterval(iv) {
+      this.selectedInterval = iv;
+      await loadCandles(this.selectedSymbol, iv);
     },
 
     async toggleBot() {
@@ -103,6 +111,7 @@ function app() {
         const data = await res.json();
         this.botStatus.running = data.running;
         this.showToast(`Bot ${action}ed`, 'info');
+        if (action === 'start') await loadCandles(this.selectedSymbol);
       }
     },
 
@@ -124,7 +133,7 @@ function app() {
           this.botStatus.trading_pairs = data.pairs;
           this.lastScanTime = data.last_scan_time;
           this.selectedSymbol = data.pairs[0] ?? this.selectedSymbol;
-          await loadCandles(this.selectedSymbol);
+          await loadCandles(this.selectedSymbol, this.selectedInterval);
           this.showToast(`Scan complete — ${data.pairs.length} pairs found`, 'info');
         } else {
           this.showToast('Scan failed', 'error');
@@ -154,24 +163,38 @@ function app() {
     },
     formatDate(iso) {
       if (!iso) return '';
-      return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Vilnius' });
+    },
+    fmtPrice(n) {
+      if (n == null) return '—';
+      const p = n >= 1000 ? 2 : n >= 1 ? 4 : n >= 0.1 ? 5 : n >= 0.01 ? 6 : 8;
+      return Number(n).toFixed(p);
     },
   };
 
   // ─── Chart functions (plain JS, no Alpine proxy) ───────────────────────────
 
-  function initCharts() {
+  function initCharts(alpine) {
     const chartEl = document.getElementById('priceWrap');
     const rsiEl   = document.getElementById('rsiWrap');
     const macdEl  = document.getElementById('macdWrap');
     console.log('initCharts dimensions — price:', chartEl.offsetWidth, 'x', chartEl.offsetHeight,
                 '| rsi:', rsiEl.offsetWidth, 'x', rsiEl.offsetHeight);
 
+    const TZ = 'Europe/Vilnius';
+    const tzFmt = (ts, opts) => new Date(ts * 1000).toLocaleString('en-GB', { ...opts, timeZone: TZ });
+    const tickMarkFormatter = (time, type) => {
+      if (type >= 3) return tzFmt(time, { hour: '2-digit', minute: '2-digit' });
+      if (type === 2) return tzFmt(time, { month: 'short', day: 'numeric' });
+      if (type === 1) return tzFmt(time, { month: 'short' });
+      return tzFmt(time, { year: 'numeric' });
+    };
     const baseOpts = {
       layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
       grid:   { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
       rightPriceScale: { borderColor: '#30363d' },
-      timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false, tickMarkFormatter },
+      localization: { timeFormatter: ts => tzFmt(ts, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) },
     };
 
     priceChart = LightweightCharts.createChart(chartEl, {
@@ -179,6 +202,7 @@ function app() {
       width: chartEl.offsetWidth,
       height: chartEl.offsetHeight,
       crosshair: { mode: 1 },
+      timeScale: { ...baseOpts.timeScale, rightOffset: 15 },
     });
     candleSeries  = priceChart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderUpColor: '#3fb950', borderDownColor: '#f85149', wickUpColor: '#3fb950', wickDownColor: '#f85149' });
     ema9Series    = priceChart.addLineSeries({ color: '#58a6ff', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
@@ -202,6 +226,16 @@ function app() {
     macdSignalSeries = macdChart.addLineSeries({ color: '#f0883e', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     macdHistSeries   = macdChart.addHistogramSeries({ priceFormat: { type: 'price', precision: 6, minMove: 0.000001 } });
 
+    // Crosshair price → statsbar
+    priceChart.subscribeCrosshairMove(param => {
+      if (param.seriesData && param.seriesData.has(candleSeries)) {
+        const bar = param.seriesData.get(candleSeries);
+        alpine.crosshairPrice = bar.close ?? bar.value ?? null;
+      } else {
+        alpine.crosshairPrice = null;
+      }
+    });
+
     // Sync scroll
     priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
       if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
@@ -220,14 +254,32 @@ function app() {
     }).observe(macdEl);
   }
 
-  async function loadCandles(symbol) {
-    const res = await fetch(`/api/ohlcv/${symbol}?limit=200`);
+  function pricePrecision(price) {
+    if (price >= 1000) return { precision: 2, minMove: 0.01 };
+    if (price >= 100)  return { precision: 2, minMove: 0.01 };
+    if (price >= 10)   return { precision: 3, minMove: 0.001 };
+    if (price >= 1)    return { precision: 4, minMove: 0.0001 };
+    if (price >= 0.1)  return { precision: 5, minMove: 0.00001 };
+    if (price >= 0.01) return { precision: 6, minMove: 0.000001 };
+    return               { precision: 8, minMove: 0.00000001 };
+  }
+
+  async function loadCandles(symbol, interval = '1m') {
+    const res = await fetch(`/api/ohlcv/${symbol}?limit=200&interval=${interval}`);
     if (!res.ok) return;
     const candles = await res.json();
     if (!candles.length) return;
 
     const times = candles.map(c => Math.floor(c.open_time / 1000));
     const closes = candles.map(c => c.close);
+    const lastClose = closes[closes.length - 1];
+    const pair = symbol.replace('USDT', '/USDT');
+    document.title = `${Number(lastClose).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${pair} | Binance`;
+
+    const fmt = pricePrecision(lastClose);
+    candleSeries.applyOptions({ priceFormat: { type: 'price', ...fmt } });
+    ema9Series.applyOptions({ priceFormat: { type: 'price', ...fmt } });
+    ema21Series.applyOptions({ priceFormat: { type: 'price', ...fmt } });
 
     candleSeries.setData(candles.map(c => ({
       time: Math.floor(c.open_time / 1000),
@@ -261,6 +313,11 @@ function app() {
       if (msg.type === 'candle' && msg.symbol === alpine.selectedSymbol && candleSeries) {
         const c = msg.data;
         candleSeries.update({ time: Math.floor(c.open_time / 1000), open: c.open, high: c.high, low: c.low, close: c.close });
+        const fmt = pricePrecision(c.close);
+        candleSeries.applyOptions({ priceFormat: { type: 'price', ...fmt } });
+        priceChart.timeScale().scrollToRealTime();
+        const pair = alpine.selectedSymbol.replace('USDT', '/USDT');
+        document.title = `${Number(c.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${pair} | Binance`;
       } else if (msg.type === 'portfolio_update') {
         alpine.portfolio = { ...alpine.portfolio, ...msg.data };
       } else if (msg.type === 'trade_update') {

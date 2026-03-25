@@ -24,6 +24,13 @@ class BotEngine:
         self._last_signals: Dict[str, str] = {}
         self._socket_tasks: Dict[str, asyncio.Task] = {}
 
+    def start_streams(self) -> None:
+        """Start kline sockets for all trading pairs (dashboard data, no trading)."""
+        for symbol in settings.trading_pairs:
+            if symbol not in self._socket_tasks:
+                self._start_pair_socket(symbol)
+        logger.info("Kline streams started for %d pairs", len(settings.trading_pairs))
+
     async def start(self) -> None:
         if self.running:
             logger.info("Bot already running")
@@ -33,7 +40,8 @@ class BotEngine:
         await self._seed_candles()
         await self._reconcile_on_startup()
         for symbol in settings.trading_pairs:
-            self._start_pair_socket(symbol)
+            if symbol not in self._socket_tasks:
+                self._start_pair_socket(symbol)
 
     async def stop(self) -> None:
         self.running = False

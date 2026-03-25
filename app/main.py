@@ -62,6 +62,21 @@ async def lifespan(app: FastAPI):
 
     scheduler.add_job(_portfolio_snapshot, "interval", minutes=5, id="portfolio_snapshot")
 
+    async def _broadcast_latest_candles():
+        """Fetch the latest 1m candle for each pair and push to dashboard clients."""
+        from app.api.ws import ws_manager
+        for symbol in settings.trading_pairs:
+            try:
+                klines = await exchange.get_klines(symbol, settings.candle_interval, limit=2)
+                if klines:
+                    c = klines[-1]
+                    await ws_manager.broadcast({"type": "candle", "symbol": symbol, "data": c})
+                    await bot_engine._store_candle(symbol, c)
+            except Exception as e:
+                logger.warning("[candle_refresh] %s: %s", symbol, e)
+
+    scheduler.add_job(_broadcast_latest_candles, "interval", minutes=1, id="candle_refresh")
+
     if settings.pair_scan_enabled:
         async def _pair_scan():
             discovered = await pair_scanner.scan()
@@ -83,6 +98,10 @@ async def lifespan(app: FastAPI):
     logger.info("Seeding candle history...")
     await bot_engine._seed_candles()
     await bot_engine._reconcile_on_startup()
+
+    # Always stream kline data for the dashboard, regardless of bot_enabled
+    logger.info("Starting kline streams for dashboard...")
+    bot_engine.start_streams()
 
     # Auto-start bot if configured
     if settings.bot_enabled:

@@ -76,17 +76,14 @@ def evaluate(df: pd.DataFrame, symbol: str = "") -> SignalResult:
     }
 
     # --- LONG ENTRY conditions ---
-    macd_cross_up = (
-        float(c["macd"]) > float(c["macd_signal"])
-        and float(p["macd"]) <= float(p["macd_signal"])
-    )
+    macd_bullish = float(c["macd"]) > float(c["macd_signal"])
     ema_trend_up = float(c["ema_fast"]) > float(c["ema_slow"])
-    rsi_in_range = settings.rsi_oversold < float(c["rsi"]) < 55.0
+    rsi_in_range = settings.rsi_oversold < float(c["rsi"]) < 68.0
 
-    if macd_cross_up and ema_trend_up and rsi_in_range:
+    if macd_bullish and ema_trend_up and rsi_in_range:
         confidence = _score_long(c, p)
-        logger.info("[%s] BUY signal — RSI=%.1f EMA_up=%s MACD_cross=%s conf=%.2f",
-                    symbol, c["rsi"], ema_trend_up, macd_cross_up, confidence)
+        logger.info("[%s] BUY signal — RSI=%.1f EMA_up=%s MACD_bull=%s conf=%.2f",
+                    symbol, c["rsi"], ema_trend_up, macd_bullish, confidence)
         return SignalResult(
             action=Action.BUY,
             symbol=symbol,

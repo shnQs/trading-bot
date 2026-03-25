@@ -66,7 +66,7 @@
     .sv  { font-weight: 600; color: #f9fafb; }
     .pos { font-weight: 600; color: #4ade80; }
     .neg { font-weight: 600; color: #f87171; }
-    .ps  { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .ps  { display: flex; align-items: center; gap: 8px; }
     select { background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 2px 8px; color: #f9fafb; font-size: 12px; font-family: inherit; }
 
     /* ─── Main row ─────────────────────────────────────────────────── */
@@ -76,6 +76,31 @@
       display: flex;
       overflow: hidden;
     }
+
+    /* ─── Interval toolbar ─────────────────────────────────────────── */
+    #intervalBar {
+      height: 32px;
+      flex-shrink: 0;
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .iv-btn {
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 3px 10px;
+      background: transparent;
+      color: #6b7280;
+    }
+    .iv-btn:hover { background: #1f2937; color: #f9fafb; }
+    .iv-btn.active { background: #1d4ed8; color: #fff; }
 
     /* ─── Chart column ─────────────────────────────────────────────── */
     #chartCol {
@@ -198,7 +223,10 @@
     <span><span class="sl">Win Rate </span><span class="sv" x-text="winRate() + '%'"></span></span>
     <span><span class="sl">Open </span><span class="sv" x-text="portfolio.open_trades_count ?? 0"></span></span>
     <span><span class="sl">Max DD </span><span class="red" x-text="(portfolio.max_drawdown_pct ?? 0).toFixed(2) + '%'"></span></span>
-    <span class="ps">
+    <span x-show="crosshairPrice != null" style="margin-left:auto;margin-right:0">
+      <span class="sl">Price </span><span class="sv" x-text="fmtPrice(crosshairPrice)"></span>
+    </span>
+    <span class="ps" :style="crosshairPrice != null ? '' : 'margin-left:auto'">
       <span class="sl">Pair:</span>
       <select x-model="selectedSymbol" @change="loadCandles()">
         <template x-for="pair in botStatus.trading_pairs" :key="pair">
@@ -206,6 +234,13 @@
         </template>
       </select>
     </span>
+  </div>
+
+  <div id="intervalBar">
+    <template x-for="iv in intervals" :key="iv">
+      <button class="iv-btn" :class="selectedInterval === iv ? 'active' : ''"
+              @click="changeInterval(iv)" x-text="iv"></button>
+    </template>
   </div>
 
   <div id="main">
