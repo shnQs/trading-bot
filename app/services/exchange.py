@@ -139,13 +139,27 @@ class BinanceClient:
         self, symbol: str, interval: str, callback: Callable
     ) -> asyncio.Task:
         async def _run():
-            async with self._bsm.kline_socket(
-                symbol=symbol, interval=interval
-            ) as stream:
-                while True:
-                    msg = await stream.recv()
-                    if msg:
-                        await callback(msg)
+            retry_delay = 5
+            while True:
+                try:
+                    async with self._bsm.kline_socket(
+                        symbol=symbol, interval=interval
+                    ) as stream:
+                        retry_delay = 5  # reset on successful connect
+                        while True:
+                            msg = await stream.recv()
+                            if msg:
+                                await callback(msg)
+                except asyncio.CancelledError:
+                    logger.info("Kline socket cancelled: %s %s", symbol, interval)
+                    return
+                except Exception as e:
+                    logger.warning(
+                        "Kline socket error %s %s: %s — reconnecting in %ds",
+                        symbol, interval, e, retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 60)
 
         task = asyncio.create_task(_run())
         self._socket_tasks.append(task)
