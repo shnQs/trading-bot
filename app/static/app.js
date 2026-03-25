@@ -49,6 +49,7 @@ function app() {
     manualSymbol: '',
     manualAmount: 50,
     manualBuying: false,
+    aggressiveBuying: false,
 
     // --- Lifecycle ---
     async init() {
@@ -142,6 +143,28 @@ function app() {
         }
       } finally {
         this.manualBuying = false;
+      }
+    },
+
+    async aggressiveBuy() {
+      const symbol = this.selectedSymbol.toUpperCase();
+      if (!symbol || !this.manualAmount) return;
+      this.aggressiveBuying = true;
+      try {
+        const res = await fetch('/api/orders/buy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, usdt_amount: this.manualAmount, aggressive: true }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          this.showToast(`[TEST] Bought ${data.quantity} ${symbol} @ ${data.entry_price}`, 'info');
+          await this.fetchTrades();
+        } else {
+          this.showToast(data.detail || 'Aggressive buy failed', 'error');
+        }
+      } finally {
+        this.aggressiveBuying = false;
       }
     },
 

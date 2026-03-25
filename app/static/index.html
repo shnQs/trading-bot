@@ -178,6 +178,7 @@
     .mo-field label { font-size: 11px; color: #9ca3af; }
     .mo-field input { background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 4px 8px; color: #f9fafb; font-size: 12px; font-family: inherit; width: 100%; }
     .btn-buy  { background: #15803d; padding: 5px 14px; } .btn-buy:hover  { background: #16a34a; }
+    .btn-aggressive { background: #7c3aed; padding: 5px 14px; } .btn-aggressive:hover { background: #8b5cf6; }
     .btn-close-trade { background: #7f1d1d; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; color: #fca5a5; font-family: inherit; padding: 2px 8px; white-space: nowrap; }
     .btn-close-trade:hover { background: #b91c1c; color: #fff; }
 
@@ -305,6 +306,7 @@
             <input type="number" x-model.number="manualAmount" placeholder="50" min="1" step="1"/>
           </div>
           <button class="btn btn-buy" @click="manualBuy()" x-text="manualBuying ? 'Buying...' : 'BUY'"></button>
+          <button class="btn btn-aggressive" @click="aggressiveBuy()" x-text="aggressiveBuying ? 'Testing...' : 'Test Buy'" title="+0.1% limit — guaranteed fill"></button>
         </div>
       </div>
 

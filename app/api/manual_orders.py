@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/orders", tags=["manual_orders"])
 class ManualBuyRequest(BaseModel):
     symbol: str
     usdt_amount: float
+    aggressive: bool = False
 
 
 class ManualCloseRequest(BaseModel):
@@ -34,12 +36,16 @@ async def manual_buy(req: ManualBuyRequest, db: AsyncSession = Depends(get_db)):
     if req.usdt_amount <= 0:
         raise HTTPException(status_code=400, detail="usdt_amount must be positive")
 
-    # Get current price from latest kline
+    # Get current price
     try:
-        klines = await exchange.get_klines(symbol, settings.candle_interval, limit=1)
-        if not klines:
-            raise HTTPException(status_code=400, detail="Could not fetch current price")
-        current_price = klines[-1]["close"]
+        if req.aggressive:
+            ticker = await exchange.get_symbol_ticker(symbol)
+            current_price = float(ticker["price"])
+        else:
+            klines = await exchange.get_klines(symbol, settings.candle_interval, limit=1)
+            if not klines:
+                raise HTTPException(status_code=400, detail="Could not fetch current price")
+            current_price = klines[-1]["close"]
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Exchange error: {e}")
 
@@ -79,11 +85,38 @@ async def manual_buy(req: ManualBuyRequest, db: AsyncSession = Depends(get_db)):
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"Already have an open trade on {symbol}")
 
-    # Place market buy
-    try:
-        entry_order = await exchange.place_market_order(symbol=symbol, side="BUY", quantity=quantity)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Order failed: {e}")
+    # Place order
+    if req.aggressive:
+        limit_price = round(current_price * 1.001, 8)
+        try:
+            entry_order = await exchange.place_limit_order(
+                symbol=symbol, side="BUY", quantity=quantity, price=limit_price
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Order failed: {e}")
+
+        # Poll up to 3s for fill (almost always immediate)
+        order_id = str(entry_order.get("orderId", ""))
+        for _ in range(3):
+            if entry_order.get("status") == "FILLED":
+                break
+            await asyncio.sleep(1)
+            try:
+                entry_order = await exchange.get_order(symbol=symbol, order_id=order_id)
+            except Exception:
+                pass
+
+        if entry_order.get("status") != "FILLED":
+            try:
+                await exchange.cancel_order(symbol=symbol, order_id=order_id)
+            except Exception:
+                pass
+            raise HTTPException(status_code=408, detail="Aggressive limit order did not fill — cancelled")
+    else:
+        try:
+            entry_order = await exchange.place_market_order(symbol=symbol, side="BUY", quantity=quantity)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Order failed: {e}")
 
     filled_price = float(entry_order.get("fills", [{}])[0].get("price", current_price))
     if filled_price == 0:
@@ -102,7 +135,7 @@ async def manual_buy(req: ManualBuyRequest, db: AsyncSession = Depends(get_db)):
         take_profit=take_profit,
         entry_time=datetime.utcnow(),
         exchange_order_id=str(entry_order.get("orderId", "")),
-        strategy_signal={"source": "manual", "usdt_amount": req.usdt_amount},
+        strategy_signal={"source": "manual_aggressive" if req.aggressive else "manual", "usdt_amount": req.usdt_amount},
     )
     db.add(trade)
     await db.commit()

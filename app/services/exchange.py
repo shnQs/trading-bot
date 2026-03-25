@@ -135,6 +135,28 @@ class BinanceClient:
         """Fetch 24h ticker stats for all symbols."""
         return await self._client.get_ticker()
 
+    async def get_symbol_ticker(self, symbol: str) -> dict:
+        """Lightest single-symbol price endpoint."""
+        return await self._client.get_symbol_ticker(symbol=symbol)
+
+    async def place_limit_order(
+        self, symbol: str, side: str, quantity: float, price: float
+    ) -> dict:
+        try:
+            order = await self._client.create_order(
+                symbol=symbol,
+                side=side,
+                type="LIMIT",
+                timeInForce="GTC",
+                quantity=quantity,
+                price=str(round(price, 8)),
+            )
+            logger.info("Limit order placed: %s %s %s @ %.8f", side, quantity, symbol, price)
+            return order
+        except BinanceAPIException as e:
+            logger.error("Limit order failed: %s", e)
+            raise
+
     def start_kline_socket(
         self, symbol: str, interval: str, callback: Callable
     ) -> asyncio.Task:
